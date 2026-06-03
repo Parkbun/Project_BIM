@@ -5,10 +5,11 @@
     box-sizing: border-box;
 }
 
-body {
+html, body {
     margin: 0;
     padding: 0;
-    height: 100vh;
+    height: 100%; /* Đổi sang 100% để khớp hoàn hảo khi nhúng Iframe vào Trimble */
+    width: 100%;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -43,9 +44,10 @@ body {
     flex-direction: column; /* Xếp dọc: Bảng ở trên, Gantt ở dưới */
     background: #ffffff;
     overflow: hidden; /* Khóa cuộn tổng, để 2 khung con tự cuộn độc lập */
+    min-height: 0; /* Chặn không cho khu vực làm việc bị phình to quá màn hình */
 }
 
-/* KHUNG CHỨA BẢNG: Chiếm 45% (hoặc Bủn có thể sửa thành 50%) */
+/* KHUNG CHỨA BẢNG: Chiếm cố định 45% chiều cao vùng làm việc */
 .table-container {
     width: 100% !important; 
     flex: 0 0 45%; 
@@ -55,12 +57,22 @@ body {
     border-right: none;
 }
 
-/* KHUNG CHỨA GANTT: Tự động bung rộng lấp đầy 100% khoảng trống còn lại */
-.gantt-container {
+/* KHUNG BỌC NGOÀI GANTT (Đổi tên thành gantt-layout để né trùng tên với Frappe) */
+.gantt-layout {
     width: 100% !important; 
-    flex: 1; /* Cú chốt là đây: Bắt khung Gantt giãn hết cỡ xuống đáy */
-    overflow-y: auto; 
-    overflow-x: auto; 
+    flex: 1 1 auto; 
+    min-height: 0; /* Ngăn chặn phình to theo chiều dọc của SVG */
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+}
+
+/* KHUNG CHỨA THỰC TẾ DO THƯ VIỆN FRAPPE GANTT TỰ SINH RA (Bên trong gantt-layout) */
+.gantt-layout .gantt-container {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%; /* Khóa chặt chiều cao bằng đúng khung nhìn */
+    overflow: auto; /* Ép thanh cuộn ngang nổi lềnh bềnh cố định ở đáy khung hình */
     padding: 0 !important;
 }
 
