@@ -169,7 +169,7 @@ function getTaskStatus(task) {
 document.getElementById('simulatedToday').addEventListener('change', renderWorkspace);
 
 // ==========================================
-// RENDER GIAO DIỆN CHỐNG NHẢY GANTT
+// RENDER GIAO DIỆN
 // ==========================================
 function renderWorkspace() {
     localStorage.setItem('bim_ai_tasks', JSON.stringify(tasks));
@@ -473,17 +473,21 @@ document.getElementById('btnDeleteAll').addEventListener('click', function () {
 });
 
 // ==========================================
-// ĐỒNG BỘ 3D VÀ RUN TIMELINE (BẢN CHUẨN XÓA LỖI MÀU)
+// BỘ NÃO TÍNH TOÁN MÀU SẮC CHUẨN (Sửa lỗi Alpha a: 255)
 // ==========================================
-const colorMap = {
-    'status-none': { r: 140, g: 147, b: 155, a: 0.2 }, // Xám mờ cho việc chưa làm   
-    'status-enable': { r: 23, g: 123, b: 192, a: 1 },   
-    'status-commit': { r: 12, g: 67, b: 107, a: 1 },    
-    'status-started': { r: 247, g: 164, b: 28, a: 1 },  
-    'status-paused': { r: 188, g: 30, b: 38, a: 1 },    
-    'status-completed': { r: 0, g: 109, b: 57, a: 1 }   
+// Đây là cú chốt: Đổi toàn bộ a: 1 thành a: 255 để màu hiện lên rõ nét 100%
+const bimColorMap = {
+    'status-none': { r: 200, g: 200, b: 200, a: 255 }, // Xám nhạt
+    'status-enable': { r: 23, g: 123, b: 192, a: 255 },   
+    'status-commit': { r: 12, g: 67, b: 107, a: 255 },    
+    'status-started': { r: 247, g: 164, b: 28, a: 255 },  
+    'status-paused': { r: 188, g: 30, b: 38, a: 255 },    
+    'status-completed': { r: 0, g: 109, b: 57, a: 255 }   
 };
 
+// ==========================================
+// ĐỒNG BỘ 3D VÀ RUN TIMELINE
+// ==========================================
 document.getElementById('btnSync').addEventListener('click', async function () {
     if (typeof TrimbleConnectWorkspace === 'undefined') {
         alert("⚠️ Tính năng này chỉ chạy bên trong môi trường Trimble Connect!");
@@ -505,14 +509,16 @@ document.getElementById('btnSync').addEventListener('click', async function () {
     for (let task of tasks) {
         if (task.modelObjects && task.modelObjects.length > 0) {
             const status = getTaskStatus(task);
-            const rgbColor = colorMap[status.class];
+            const rgbColor = bimColorMap[status.class];
             if (rgbColor) {
                 task.modelObjects.forEach(obj => {
-                    allColorRequests.push({
-                        modelId: obj.modelId,
-                        objectRuntimeIds: obj.objectRuntimeIds,
-                        color: rgbColor
-                    });
+                    if (obj.objectRuntimeIds && obj.objectRuntimeIds.length > 0) {
+                        allColorRequests.push({
+                            modelId: obj.modelId,
+                            objectRuntimeIds: obj.objectRuntimeIds,
+                            color: rgbColor
+                        });
+                    }
                 });
                 paintedCount++;
             }
@@ -615,14 +621,16 @@ document.getElementById('btnRunTimeline').addEventListener('click', async functi
                 const dot = document.getElementById(`dot-${i}`);
                 if (dot) dot.className = `task-status-dot ${statusClass}`;
 
-                const rgbColor = colorMap[statusClass];
+                const rgbColor = bimColorMap[statusClass];
                 if (rgbColor) {
                     task.modelObjects.forEach(obj => {
-                        allColorRequests.push({
-                            modelId: obj.modelId,
-                            objectRuntimeIds: obj.objectRuntimeIds,
-                            color: rgbColor
-                        });
+                        if (obj.objectRuntimeIds && obj.objectRuntimeIds.length > 0) {
+                            allColorRequests.push({
+                                modelId: obj.modelId,
+                                objectRuntimeIds: obj.objectRuntimeIds,
+                                color: rgbColor
+                            });
+                        }
                     });
                 }
             }
