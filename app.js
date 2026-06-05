@@ -197,8 +197,6 @@ function renderWorkspace() {
         const modelStyle = task.modelDisplayName ? "color: #e65100; text-decoration: none; font-weight: bold;" : "";
 
         const status = getTaskStatus(task);
-        
-        // PHÉP THUẬT Ở ĐÂY: Ép màu thanh Gantt về đúng bản chất (Summary: đen xám, Detail: xanh dương)
         task.custom_class = task.isSummary ? "bar-summary" : "bar-detail";
 
         tr.innerHTML = `
@@ -494,25 +492,40 @@ document.getElementById('btnDeleteAll').addEventListener('click', function () {
 // ĐỒNG BỘ 3D THEO MỐC NGÀY CHỈ ĐỊNH
 // ==========================================
 document.getElementById('btnSync').addEventListener('click', async function () {
+    if (typeof TrimbleConnectWorkspace === 'undefined') {
+        alert("⚠️ Tính năng này chỉ chạy bên trong môi trường Trimble Connect!");
+        return;
+    }
+    
+    let API;
     try {
-        if (typeof TrimbleConnectWorkspace === 'undefined') {
-            alert("⚠️ Vui lòng chạy ứng dụng này bên trong môi trường Trimble Connect!");
-            return;
-        }
-        
-        const API = await TrimbleConnectWorkspace.connect(window.parent);
-        await API.viewer.resetColors();
-        
-        const colorMap = {
-            'status-none': { r: 140, g: 147, b: 155, a: 0.2 }, // Xám mờ cho việc chưa làm   
-            'status-enable': { r: 23, g: 123, b: 192, a: 1 },   
-            'status-commit': { r: 12, g: 67, b: 107, a: 1 },    
-            'status-started': { r: 247, g: 164, b: 28, a: 1 },  
-            'status-paused': { r: 188, g: 30, b: 38, a: 1 },    
-            'status-completed': { r: 0, g: 109, b: 57, a: 1 }   
-        };
+        API = await TrimbleConnectWorkspace.connect(window.parent);
+    } catch (err) {
+        alert("⚠️ Lỗi kết nối Trimble Connect API. F12 để xem chi tiết!");
+        console.error(err);
+        return;
+    }
 
-        let paintedCount = 0;
+    try {
+        // Tách riêng reset color, lỗi thì bỏ qua không chặn luồng chính
+        if (API.viewer && API.viewer.resetColors) {
+            await API.viewer.resetColors();
+        }
+    } catch (err) {
+        console.warn("Bỏ qua lỗi Reset màu mô hình:", err);
+    }
+    
+    const colorMap = {
+        'status-none': { r: 140, g: 147, b: 155, a: 0.2 }, // Xám mờ cho việc chưa làm   
+        'status-enable': { r: 23, g: 123, b: 192, a: 1 },   
+        'status-commit': { r: 12, g: 67, b: 107, a: 1 },    
+        'status-started': { r: 247, g: 164, b: 28, a: 1 },  
+        'status-paused': { r: 188, g: 30, b: 38, a: 1 },    
+        'status-completed': { r: 0, g: 109, b: 57, a: 1 }   
+    };
+
+    let paintedCount = 0;
+    try {
         for (let task of tasks) {
             if (task.modelObjects && task.modelObjects.length > 0) {
                 const status = getTaskStatus(task);
@@ -529,10 +542,9 @@ document.getElementById('btnSync').addEventListener('click', async function () {
         } else {
             alert("Chưa có hạng mục nào được gán mô hình 3D để đồng bộ màu.");
         }
-        
-    } catch (error) {
-        console.error("Lỗi đồng bộ 3D:", error);
-        alert("Có lỗi xảy ra khi đồng bộ màu lên mô hình 3D. Hãy xem tab Console (F12) để biết chi tiết.");
+    } catch (err) {
+        console.error("Lỗi tô màu 3D:", err);
+        alert("Có lỗi khi nhuộm màu 3D. Nhấn F12 kiểm tra Console!");
     }
 });
 
@@ -543,7 +555,6 @@ let timelineInterval = null;
 let isRunning = false;
 let currentDateTracker = null;
 
-// Hàm kiểm tra trạng thái cực nhanh để không bị giật lag khi vòng lặp chạy
 function getFastStatusForDate(task, targetDate) {
     const today = new Date(targetDate); today.setHours(0, 0, 0, 0);
     const start = new Date(task.start); start.setHours(0, 0, 0, 0);
@@ -573,7 +584,6 @@ document.getElementById('btnRunTimeline').addEventListener('click', async functi
         return;
     }
 
-    // TÍNH TOÁN NGÀY BẮT ĐẦU VÀ KẾT THÚC CỦA TOÀN DỰ ÁN
     let minDate = new Date(8640000000000000); 
     let maxDate = new Date(-8640000000000000); 
     let hasModels = false;
@@ -592,71 +602,81 @@ document.getElementById('btnRunTimeline').addEventListener('click', async functi
         return;
     }
 
-    // Khởi tạo mốc thời gian bắt đầu chạy (lùi lại 5 ngày trước khi khởi công)
     if (!currentDateTracker || currentDateTracker > maxDate || currentDateTracker < minDate) {
         currentDateTracker = new Date(minDate);
         currentDateTracker.setDate(currentDateTracker.getDate() - 5); 
     }
 
-    // Kết nối API Trimble
-    let API;
-    try {
-        API = await TrimbleConnectWorkspace.connect(window.parent);
-        await API.viewer.resetColors();
-    } catch (err) {
+    // KẾT NỐI API AN TOÀN
+    if (typeof TrimbleConnectWorkspace === 'undefined') {
         alert("⚠️ Tính năng này chỉ chạy bên trong môi trường Trimble Connect!");
         return;
     }
 
+    let API;
+    try {
+        API = await TrimbleConnectWorkspace.connect(window.parent);
+    } catch (err) {
+        alert("⚠️ Lỗi kết nối Trimble Connect API!");
+        return;
+    }
+
+    try {
+        if (API.viewer && API.viewer.resetColors) {
+            await API.viewer.resetColors();
+        }
+    } catch (err) {
+        console.warn("Bỏ qua lỗi Reset màu mô hình:", err);
+    }
+
     isRunning = true;
     btn.innerHTML = "⏸ Pause Timeline";
-    btn.style.backgroundColor = "#f44336"; // Đổi nút thành màu đỏ
+    btn.style.backgroundColor = "#f44336"; 
 
     const colorMap = {
-        'status-none': { r: 140, g: 147, b: 155, a: 0.2 }, // Xám mờ
+        'status-none': { r: 140, g: 147, b: 155, a: 0.2 },
         'status-enable': { r: 23, g: 123, b: 192, a: 1 },
         'status-commit': { r: 12, g: 67, b: 107, a: 1 },
-        'status-started': { r: 247, g: 164, b: 28, a: 1 },  // Vàng (Đang làm)
-        'status-completed': { r: 0, g: 109, b: 57, a: 1 }   // Xanh (Đã xong)
+        'status-started': { r: 247, g: 164, b: 28, a: 1 },
+        'status-completed': { r: 0, g: 109, b: 57, a: 1 }
     };
 
-    // VÒNG LẶP THỜI GIAN (0.4 giây nhảy 1 lần)
     timelineInterval = setInterval(async () => {
         const isoDate = currentDateTracker.toISOString().split('T')[0];
         simInput.value = isoDate;
 
         let paintRequests = [];
         
-        // Quét để đổi màu khối 3D và chấm tròn trên bảng
         for (let i = 0; i < tasks.length; i++) {
             let task = tasks[i];
             if (task.modelObjects && task.modelObjects.length > 0) {
                 const statusClass = getFastStatusForDate(task, currentDateTracker);
                 
-                // Cập nhật chấm tròn trên bảng không cần render lại toàn bộ để tránh lag
                 const dot = document.getElementById(`dot-${i}`);
                 if (dot) dot.className = `task-status-dot ${statusClass}`;
 
-                // Gửi lệnh nhuộm màu cho Trimble
                 const rgbColor = colorMap[statusClass];
                 if (rgbColor) {
                     paintRequests.push(API.viewer.setColors(task.modelObjects, rgbColor));
                 }
             }
         }
-        await Promise.all(paintRequests); 
+        
+        try {
+            await Promise.all(paintRequests); 
+        } catch(e) {
+            console.warn("Có lỗi nhỏ khi nhuộm màu lúc Auto-play:", e);
+        }
 
-        // Tăng thêm 1 ngày
         currentDateTracker.setDate(currentDateTracker.getDate() + 1);
 
-        // Dừng lại nếu đã vượt qua ngày kết thúc dự án
         if (currentDateTracker > maxDate) {
-            currentDateTracker.setDate(currentDateTracker.getDate() + 5); // Chạy lố vài ngày cho mượt
+            currentDateTracker.setDate(currentDateTracker.getDate() + 5); 
             clearInterval(timelineInterval);
             isRunning = false;
             btn.innerHTML = "▶ Run Timeline";
             btn.style.backgroundColor = "#4CAF50";
-            renderWorkspace(); // Chốt lại trạng thái
+            renderWorkspace(); 
         }
     }, 400); 
 });
