@@ -139,8 +139,17 @@ if (window.ganttFormatterInterval) clearInterval(window.ganttFormatterInterval);
 window.ganttFormatterInterval = setInterval(applyMSProjectFormat, 200);
 
 // ==========================================
-// THUẬT TOÁN ĐÁNH GIÁ TRẠNG THÁI 4D (CHO BẢNG)
+// BỘ NÃO TÍNH TOÁN MÀU SẮC CHUẨN BIM 4D
 // ==========================================
+const bimColorMap = {
+    'status-none': { r: 140, g: 147, b: 155, a: 1 },    // Xám
+    'status-enable': { r: 23, g: 123, b: 192, a: 1 },   // Xanh nhạt
+    'status-commit': { r: 12, g: 67, b: 107, a: 1 },    // Xanh đậm
+    'status-started': { r: 247, g: 164, b: 28, a: 1 },  // Vàng
+    'status-paused': { r: 188, g: 30, b: 38, a: 1 },    // Đỏ
+    'status-completed': { r: 0, g: 109, b: 57, a: 1 }   // Xanh lá
+};
+
 function getTaskStatus(task) {
     if (!task.modelDisplayName || task.modelDisplayName === "select model") {
         return { class: 'status-none', text: 'None (Chưa gán 3D)' };
@@ -169,7 +178,7 @@ function getTaskStatus(task) {
 document.getElementById('simulatedToday').addEventListener('change', renderWorkspace);
 
 // ==========================================
-// RENDER GIAO DIỆN
+// RENDER GIAO DIỆN CHỐNG NHẢY GANTT
 // ==========================================
 function renderWorkspace() {
     localStorage.setItem('bim_ai_tasks', JSON.stringify(tasks));
@@ -473,20 +482,7 @@ document.getElementById('btnDeleteAll').addEventListener('click', function () {
 });
 
 // ==========================================
-// BỘ NÃO TÍNH TOÁN MÀU SẮC CHUẨN (Sửa lỗi Alpha a: 255)
-// ==========================================
-// Đây là cú chốt: Đổi toàn bộ a: 1 thành a: 255 để màu hiện lên rõ nét 100%
-const bimColorMap = {
-    'status-none': { r: 200, g: 200, b: 200, a: 255 }, // Xám nhạt
-    'status-enable': { r: 23, g: 123, b: 192, a: 255 },   
-    'status-commit': { r: 12, g: 67, b: 107, a: 255 },    
-    'status-started': { r: 247, g: 164, b: 28, a: 255 },  
-    'status-paused': { r: 188, g: 30, b: 38, a: 255 },    
-    'status-completed': { r: 0, g: 109, b: 57, a: 255 }   
-};
-
-// ==========================================
-// ĐỒNG BỘ 3D VÀ RUN TIMELINE
+// 7. ĐỒNG BỘ 3D THỦ CÔNG
 // ==========================================
 document.getElementById('btnSync').addEventListener('click', async function () {
     if (typeof TrimbleConnectWorkspace === 'undefined') {
@@ -497,46 +493,52 @@ document.getElementById('btnSync').addEventListener('click', async function () {
     try { API = await TrimbleConnectWorkspace.connect(window.parent); } 
     catch (err) { alert("⚠️ Lỗi kết nối API!"); return; }
 
-    await API.viewer.setSelection([]);
+    await API.viewer.setSelection([]); // Nhả bôi đen
+    try { if (API.viewer.resetColors) await API.viewer.resetColors(); } catch (err) {}
 
-    try {
-        if (API.viewer.resetColors) await API.viewer.resetColors();
-    } catch (err) { console.warn("Bỏ qua lỗi Reset màu:", err); }
+    const colorGroups = {
+        'status-none': [], 'status-enable': [], 'status-commit': [],
+        'status-started': [], 'status-completed': []
+    };
 
-    let allColorRequests = [];
     let paintedCount = 0;
-
     for (let task of tasks) {
         if (task.modelObjects && task.modelObjects.length > 0) {
             const status = getTaskStatus(task);
-            const rgbColor = bimColorMap[status.class];
-            if (rgbColor) {
-                task.modelObjects.forEach(obj => {
-                    if (obj.objectRuntimeIds && obj.objectRuntimeIds.length > 0) {
-                        allColorRequests.push({
-                            modelId: obj.modelId,
-                            objectRuntimeIds: obj.objectRuntimeIds,
-                            color: rgbColor
-                        });
-                    }
-                });
-                paintedCount++;
-            }
+            colorGroups[status.class].push(...task.modelObjects);
+            paintedCount++;
+        }
+    }
+
+    let paintPromises = [];
+    for (let statusClass in colorGroups) {
+        if (colorGroups[statusClass].length > 0) {
+            let merged = {};
+            colorGroups[statusClass].forEach(obj => {
+                if (!merged[obj.modelId]) merged[obj.modelId] = [];
+                merged[obj.modelId].push(...obj.objectRuntimeIds);
+            });
+            let finalObjects = Object.keys(merged).map(id => ({
+                modelId: id, objectRuntimeIds: merged[id]
+            }));
+
+            paintPromises.push(API.viewer.setColors(finalObjects, bimColorMap[statusClass]));
         }
     }
 
     try {
-        if (allColorRequests.length > 0) {
-            await API.viewer.setColors(allColorRequests);
-            alert(`✅ Đã nhuộm màu 4D cho ${paintedCount} nhóm công việc!`);
+        if (paintPromises.length > 0) {
+            await Promise.all(paintPromises);
+            alert(`✅ Đã nhuộm màu 4D thành công cho ${paintedCount} nhóm công việc!`);
         } else {
-            alert("Bạn chưa gán 3D cho công việc nào cả.");
+            alert("Bạn chưa Select Model cho công việc nào cả.");
         }
     } catch (err) { alert("Lỗi khi nhuộm màu 3D!"); }
 });
 
-// 8. ĐỘNG CƠ "RUN TIMELINE" (AUTO PLAY 4D)
-let timelineInterval = null;
+// ==========================================
+// 8. ĐỘNG CƠ "RUN TIMELINE" (VÒNG LẶP CHỐNG NGHẼN API)
+// ==========================================
 let isRunning = false;
 let currentDateTracker = null;
 
@@ -559,8 +561,8 @@ document.getElementById('btnRunTimeline').addEventListener('click', async functi
     const btn = document.getElementById('btnRunTimeline');
     const simInput = document.getElementById('simulatedToday');
 
+    // NẾU ĐANG CHẠY THÌ DỪNG
     if (isRunning) {
-        clearInterval(timelineInterval);
         isRunning = false;
         btn.innerHTML = "▶ Run Timeline";
         btn.style.backgroundColor = "#4CAF50";
@@ -607,52 +609,60 @@ document.getElementById('btnRunTimeline').addEventListener('click', async functi
     btn.innerHTML = "⏸ Pause Timeline";
     btn.style.backgroundColor = "#f44336"; 
 
-    timelineInterval = setInterval(async () => {
+    // VÒNG LẶP ASYNC (Chờ xử lý xong mới qua ngày mới)
+    while (isRunning && currentDateTracker <= maxDate) {
         const isoDate = currentDateTracker.toISOString().split('T')[0];
         simInput.value = isoDate;
 
-        let allColorRequests = [];
+        const colorGroups = {
+            'status-none': [], 'status-enable': [], 'status-commit': [],
+            'status-started': [], 'status-completed': []
+        };
         
         for (let i = 0; i < tasks.length; i++) {
             let task = tasks[i];
             if (task.modelObjects && task.modelObjects.length > 0) {
                 const statusClass = getFastStatusForDate(task, currentDateTracker);
+                colorGroups[statusClass].push(...task.modelObjects);
                 
                 const dot = document.getElementById(`dot-${i}`);
                 if (dot) dot.className = `task-status-dot ${statusClass}`;
-
-                const rgbColor = bimColorMap[statusClass];
-                if (rgbColor) {
-                    task.modelObjects.forEach(obj => {
-                        if (obj.objectRuntimeIds && obj.objectRuntimeIds.length > 0) {
-                            allColorRequests.push({
-                                modelId: obj.modelId,
-                                objectRuntimeIds: obj.objectRuntimeIds,
-                                color: rgbColor
-                            });
-                        }
-                    });
-                }
             }
         }
         
-        try {
-            if (allColorRequests.length > 0) {
-                await API.viewer.setColors(allColorRequests);
+        let paintPromises = [];
+        for (let statusClass in colorGroups) {
+            if (colorGroups[statusClass].length > 0) {
+                // Gom chung modelId để Trimble không bị nghẽn
+                let merged = {};
+                colorGroups[statusClass].forEach(obj => {
+                    if (!merged[obj.modelId]) merged[obj.modelId] = [];
+                    merged[obj.modelId].push(...obj.objectRuntimeIds);
+                });
+                let finalObjects = Object.keys(merged).map(id => ({
+                    modelId: id, objectRuntimeIds: merged[id]
+                }));
+
+                paintPromises.push(API.viewer.setColors(finalObjects, bimColorMap[statusClass]));
             }
-        } catch(e) {
-            console.warn("Có lỗi nhỏ khi Auto-play:", e);
         }
 
-        currentDateTracker.setDate(currentDateTracker.getDate() + 1);
+        try { 
+            await Promise.all(paintPromises); // Chờ lệnh nhuộm màu hoàn tất 100%
+        } catch(e) { console.warn("Có lỗi nhỏ khi Auto-play:", e); }
 
-        if (currentDateTracker > maxDate) {
-            currentDateTracker.setDate(currentDateTracker.getDate() + 5); 
-            clearInterval(timelineInterval);
-            isRunning = false;
-            btn.innerHTML = "▶ Run Timeline";
-            btn.style.backgroundColor = "#4CAF50";
-            renderWorkspace(); 
-        }
-    }, 400); 
+        // Đợi thêm 0.4s để mắt người kịp nhìn thấy hiệu ứng
+        await new Promise(r => setTimeout(r, 400)); 
+
+        currentDateTracker.setDate(currentDateTracker.getDate() + 1); // Tăng 1 ngày
+    }
+
+    // Kết thúc dự án
+    if (isRunning && currentDateTracker > maxDate) {
+        currentDateTracker.setDate(currentDateTracker.getDate() + 5); 
+        isRunning = false;
+        btn.innerHTML = "▶ Run Timeline";
+        btn.style.backgroundColor = "#4CAF50";
+        renderWorkspace(); 
+    }
 });
