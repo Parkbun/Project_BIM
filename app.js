@@ -176,7 +176,6 @@ function renderWorkspace() {
     const tbody = document.getElementById("tableBody");
     tbody.innerHTML = "";
 
-    // 1. CHỮA BỆNH "NHẢY SANG PHẢI": Phá hủy cấu trúc HTML cũ để thư viện không lồng hộp vào nhau
     const ganttLayout = document.querySelector('.gantt-layout');
     ganttLayout.innerHTML = '<svg id="gantt-target"></svg>';
 
@@ -251,7 +250,6 @@ function renderWorkspace() {
                 
                 applyMSProjectFormat();
 
-                // Tạo lại lớp số thứ tự (Overlay)
                 const gContainer = document.querySelector('.gantt-container');
                 if (gContainer) {
                     const overlay = document.createElement('div');
@@ -495,44 +493,41 @@ document.getElementById('btnSync').addEventListener('click', async function () {
     try { API = await TrimbleConnectWorkspace.connect(window.parent); } 
     catch (err) { alert("⚠️ Lỗi kết nối API!"); return; }
 
-    // Chữa bệnh "Bị bôi đen": Ép Trimble nhả bôi đen trước khi tô màu
     await API.viewer.setSelection([]);
 
     try {
         if (API.viewer.resetColors) await API.viewer.resetColors();
     } catch (err) { console.warn("Bỏ qua lỗi Reset màu:", err); }
 
-    // Chữa bệnh "Không đổi màu": Gom nhóm Model theo màu
-    const colorGroups = {
-        'status-none': [], 'status-enable': [], 'status-commit': [],
-        'status-started': [], 'status-completed': []
-    };
-
+    let allColorRequests = [];
     let paintedCount = 0;
+
     for (let task of tasks) {
         if (task.modelObjects && task.modelObjects.length > 0) {
             const status = getTaskStatus(task);
-            colorGroups[status.class].push(...task.modelObjects);
-            paintedCount++;
-        }
-    }
-
-    // Nhuộm màu đồng loạt theo nhóm (Siêu mượt)
-    let paintPromises = [];
-    for (let statusClass in colorGroups) {
-        if (colorGroups[statusClass].length > 0) {
-            const rgbColor = colorMap[statusClass];
-            paintPromises.push(API.viewer.setColors(colorGroups[statusClass], rgbColor));
+            const rgbColor = colorMap[status.class];
+            if (rgbColor) {
+                task.modelObjects.forEach(obj => {
+                    allColorRequests.push({
+                        modelId: obj.modelId,
+                        objectRuntimeIds: obj.objectRuntimeIds,
+                        color: rgbColor
+                    });
+                });
+                paintedCount++;
+            }
         }
     }
 
     try {
-        await Promise.all(paintPromises);
-        if (paintedCount > 0) alert(`✅ Đã nhuộm màu 4D cho ${paintedCount} nhóm công việc!`);
-        else alert("Bạn chưa gán 3D cho công việc nào cả.");
+        if (allColorRequests.length > 0) {
+            await API.viewer.setColors(allColorRequests);
+            alert(`✅ Đã nhuộm màu 4D cho ${paintedCount} nhóm công việc!`);
+        } else {
+            alert("Bạn chưa gán 3D cho công việc nào cả.");
+        }
     } catch (err) { alert("Lỗi khi nhuộm màu 3D!"); }
 });
-
 
 // 8. ĐỘNG CƠ "RUN TIMELINE" (AUTO PLAY 4D)
 let timelineInterval = null;
@@ -599,7 +594,6 @@ document.getElementById('btnRunTimeline').addEventListener('click', async functi
     try { API = await TrimbleConnectWorkspace.connect(window.parent); } 
     catch (err) { alert("⚠️ Lỗi kết nối API!"); return; }
 
-    // Mở khóa bôi đen để thấy màu nhảy múa
     await API.viewer.setSelection([]);
     try { if (API.viewer.resetColors) await API.viewer.resetColors(); } catch (err) {}
 
@@ -611,32 +605,36 @@ document.getElementById('btnRunTimeline').addEventListener('click', async functi
         const isoDate = currentDateTracker.toISOString().split('T')[0];
         simInput.value = isoDate;
 
-        const colorGroups = {
-            'status-none': [], 'status-enable': [], 'status-commit': [],
-            'status-started': [], 'status-completed': []
-        };
+        let allColorRequests = [];
         
         for (let i = 0; i < tasks.length; i++) {
             let task = tasks[i];
             if (task.modelObjects && task.modelObjects.length > 0) {
                 const statusClass = getFastStatusForDate(task, currentDateTracker);
-                colorGroups[statusClass].push(...task.modelObjects);
                 
                 const dot = document.getElementById(`dot-${i}`);
                 if (dot) dot.className = `task-status-dot ${statusClass}`;
+
+                const rgbColor = colorMap[statusClass];
+                if (rgbColor) {
+                    task.modelObjects.forEach(obj => {
+                        allColorRequests.push({
+                            modelId: obj.modelId,
+                            objectRuntimeIds: obj.objectRuntimeIds,
+                            color: rgbColor
+                        });
+                    });
+                }
             }
         }
         
-        let paintPromises = [];
-        for (let statusClass in colorGroups) {
-            if (colorGroups[statusClass].length > 0) {
-                const rgbColor = colorMap[statusClass];
-                paintPromises.push(API.viewer.setColors(colorGroups[statusClass], rgbColor));
+        try {
+            if (allColorRequests.length > 0) {
+                await API.viewer.setColors(allColorRequests);
             }
+        } catch(e) {
+            console.warn("Có lỗi nhỏ khi Auto-play:", e);
         }
-
-        try { await Promise.all(paintPromises); } 
-        catch(e) { console.warn("Có lỗi nhỏ khi Auto-play:", e); }
 
         currentDateTracker.setDate(currentDateTracker.getDate() + 1);
 
