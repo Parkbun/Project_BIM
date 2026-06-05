@@ -492,3 +492,57 @@ document.getElementById('btnDeleteAll').addEventListener('click', function () {
         renderWorkspace(); 
     }
 });
+// ==========================================
+// 7. ĐỒNG BỘ MÀU SẮC LÊN MÔ HÌNH 3D TRIMBLE
+// ==========================================
+document.getElementById('btnSync').addEventListener('click', async function () {
+    try {
+        if (typeof TrimbleConnectWorkspace === 'undefined') {
+            alert("⚠️ Vui lòng chạy ứng dụng này bên trong môi trường Trimble Connect!");
+            return;
+        }
+        
+        const API = await TrimbleConnectWorkspace.connect(window.parent);
+        
+        // 1. Reset toàn bộ màu cũ của mô hình về mặc định trước khi tô màu mới
+        await API.viewer.resetColors();
+        
+        // 2. Bảng quy đổi màu sắc từ CSS sang mã màu RGB cho Trimble
+        const colorMap = {
+            'status-none': { r: 140, g: 147, b: 155, a: 1 },    // Xám
+            'status-enable': { r: 23, g: 123, b: 192, a: 1 },   // Xanh nhạt
+            'status-commit': { r: 12, g: 67, b: 107, a: 1 },    // Xanh đậm
+            'status-started': { r: 247, g: 164, b: 28, a: 1 },  // Vàng cam
+            'status-paused': { r: 188, g: 30, b: 38, a: 1 },    // Đỏ
+            'status-completed': { r: 0, g: 109, b: 57, a: 1 }   // Xanh lá
+        };
+
+        // Biến đếm xem có bao nhiêu cấu kiện được tô màu
+        let paintedCount = 0;
+
+        // 3. Quét từng công việc, kiểm tra trạng thái và tô màu khối 3D tương ứng
+        for (let task of tasks) {
+            // Chỉ xử lý những việc đã được gán 3D (có dữ liệu modelObjects)
+            if (task.modelObjects && task.modelObjects.length > 0) {
+                const status = getTaskStatus(task);
+                const rgbColor = colorMap[status.class];
+                
+                if (rgbColor) {
+                    // Gọi lệnh của API Trimble để nhuộm màu
+                    await API.viewer.setColors(task.modelObjects, rgbColor);
+                    paintedCount++;
+                }
+            }
+        }
+        
+        if (paintedCount > 0) {
+            alert(`✅ Đồng bộ thành công! Đã cập nhật màu tiến độ 4D cho ${paintedCount} hạng mục trên mô hình.`);
+        } else {
+            alert("Chưa có hạng mục nào được gán mô hình 3D để đồng bộ màu.");
+        }
+        
+    } catch (error) {
+        console.error("Lỗi đồng bộ 3D:", error);
+        alert("Có lỗi xảy ra khi đồng bộ màu lên mô hình 3D. Hãy xem tab Console (F12) để biết chi tiết.");
+    }
+});
