@@ -502,42 +502,50 @@ document.getElementById('btnSync').addEventListener('click', async function () {
         API = await TrimbleConnectWorkspace.connect(window.parent);
     } catch (err) {
         alert("⚠️ Lỗi kết nối Trimble Connect API. F12 để xem chi tiết!");
-        console.error(err);
         return;
     }
 
     try {
-        // Tách riêng reset color, lỗi thì bỏ qua không chặn luồng chính
         if (API.viewer && API.viewer.resetColors) {
-            await API.viewer.resetColors();
+            await API.viewer.resetColors(); // Xóa màu cũ
         }
     } catch (err) {
         console.warn("Bỏ qua lỗi Reset màu mô hình:", err);
     }
     
     const colorMap = {
-        'status-none': { r: 140, g: 147, b: 155, a: 0.2 }, // Xám mờ cho việc chưa làm   
+        'status-none': { r: 140, g: 147, b: 155, a: 0.2 }, // Xám mờ  
         'status-enable': { r: 23, g: 123, b: 192, a: 1 },   
         'status-commit': { r: 12, g: 67, b: 107, a: 1 },    
-        'status-started': { r: 247, g: 164, b: 28, a: 1 },  
+        'status-started': { r: 247, g: 164, b: 28, a: 1 },  // Vàng
         'status-paused': { r: 188, g: 30, b: 38, a: 1 },    
-        'status-completed': { r: 0, g: 109, b: 57, a: 1 }   
+        'status-completed': { r: 0, g: 109, b: 57, a: 1 }   // Xanh lá
     };
 
     let paintedCount = 0;
+    let allColorRequests = []; // Gói tất cả lệnh tô màu vào một rổ
+
     try {
         for (let task of tasks) {
             if (task.modelObjects && task.modelObjects.length > 0) {
                 const status = getTaskStatus(task);
                 const rgbColor = colorMap[status.class];
                 if (rgbColor) {
-                    await API.viewer.setColors(task.modelObjects, rgbColor);
+                    // Đóng gói đúng ngữ pháp API Trimble
+                    task.modelObjects.forEach(obj => {
+                        allColorRequests.push({
+                            modelId: obj.modelId,
+                            objectRuntimeIds: obj.objectRuntimeIds,
+                            color: rgbColor
+                        });
+                    });
                     paintedCount++;
                 }
             }
         }
         
-        if (paintedCount > 0) {
+        if (allColorRequests.length > 0) {
+            await API.viewer.setColors(allColorRequests); // Gửi 1 cục lên Trimble
             alert(`✅ Đồng bộ thành công! Đã cập nhật màu tiến độ 4D cho ${paintedCount} hạng mục trên mô hình.`);
         } else {
             alert("Chưa có hạng mục nào được gán mô hình 3D để đồng bộ màu.");
@@ -574,11 +582,150 @@ document.getElementById('btnRunTimeline').addEventListener('click', async functi
     const btn = document.getElementById('btnRunTimeline');
     const simInput = document.getElementById('simulatedToday');
 
+    if (isRunning) {
+        clearInterval(timelineInterval);
+        isRunning = false;
+        btn.innerHTML = "▶ Run Timeline";
+        btn.style.backgroundColor = "#4CAF50";
+        renderWorkspace(); 
+        return;
+    }
+
+    let minDate = new Date(8640000000000000); 
+    let maxDate = new Date(-8640000000000000); 
+    let hasModels = false;
+
+    tasks.forEach(t => {
+        if (t.modelObjects && t.modelObjects.length > 0) {
+            hasModels = true;
+            let s = new Date(t.start); let e = new Date(t.end);
+            if (s < minDate) minDate = s;
+            if (e > maxDate) maxDate = e;
+        }
+    });
+
+    if (!hasModels) {
+        alert("⚠️ Bạn chưa Select model cho bất kỳ công việc nào. Vui lòng gán 3D trước khi chạy Timeline!");
+        return;
+    }
+
+    if (!currentDateTracker || currentDateTracker > maxDate || currentDateTracker < minDate) {
+        currentDateTracker = new Date(minDate);
+        currentDateTracker.setDate(currentDateTracker.getDate() - 5); 
+    }
+
+    if (typeof TrimbleConnectWorkspace === 'undefined') {
+        alert("⚠️ Tính năng này chỉ chạy bên trong môi trường Trimble Connect!");
+        return;
+    }
+
+    let API;
+    try {
+        API = await TrimbleConnectWorkspace.connect(window.parent);
+    } catch (err) {
+        alert("⚠️ Lỗi kết nối Trimble Connect API!");
+        return;
+    }
+
+    try {
+        if (API.viewer && API.viewer.resetColors) {
+            await API.viewer.resetColors();
+        }
+    } catch (err) {
+        console.warn("Bỏ qua lỗi Reset màu mô hình:", err);
+    }
+
+    isRunning = true;
+    btn.innerHTML = "⏸ Pause Timeline";
+    btn.style.backgroundColor = "#f44336"; 
+
+    const colorMap = {
+        'status-none': { r: 140, g: 147, b: 155, a: 0.2 },
+        'status-enable': { r: 23, g: 123, b: 192, a: 1 },
+        'status-commit': { r: 12, g: 67, b: 107, a: 1 },
+        'status-started': { r: 247, g: 164, b: 28, a: 1 },
+        'status-completed': { r: 0, g: 109, b: 57, a: 1 }
+    };
+
+    timelineInterval = setInterval(async () => {
+        const isoDate = currentDateTracker.toISOString().split('T')[0];
+        simInput.value = isoDate;
+
+        let allColorRequests = [];
+        
+        for (let i = 0; i < tasks.length; i++) {
+            let task = tasks[i];
+            if (task.modelObjects && task.modelObjects.length > 0) {
+                const statusClass = getFastStatusForDate(task, currentDateTracker);
+                
+                const dot = document.getElementById(`dot-${i}`);
+                if (dot) dot.className = `task-status-dot ${statusClass}`;
+
+                const rgbColor = colorMap[statusClass];
+                if (rgbColor) {
+                    // Đóng gói đúng ngữ pháp API Trimble
+                    task.modelObjects.forEach(obj => {
+                        allColorRequests.push({
+                            modelId: obj.modelId,
+                            objectRuntimeIds: obj.objectRuntimeIds,
+                            color: rgbColor
+                        });
+                    });
+                }
+            }
+        }
+        
+        try {
+            if (allColorRequests.length > 0) {
+                await API.viewer.setColors(allColorRequests); // Bắn lệnh siêu mượt
+            }
+        } catch(e) {
+            console.warn("Có lỗi nhỏ khi nhuộm màu lúc Auto-play:", e);
+        }
+
+        currentDateTracker.setDate(currentDateTracker.getDate() + 1);
+
+        if (currentDateTracker > maxDate) {
+            currentDateTracker.setDate(currentDateTracker.getDate() + 5); 
+            clearInterval(timelineInterval);
+            isRunning = false;
+            btn.innerHTML = "▶ Run Timeline";
+            btn.style.backgroundColor = "#4CAF50";
+            renderWorkspace(); 
+        }
+    }, 400); 
+});
+// ==========================================
+// 8. ĐỘNG CƠ "RUN TIMELINE" (AUTO PLAY 4D)
+// ==========================================
+let timelineInterval = null;
+let isRunning = false;
+let currentDateTracker = null;
+
+function getFastStatusForDate(task, targetDate) {
+    const today = new Date(targetDate); today.setHours(0, 0, 0, 0);
+    const start = new Date(task.start); start.setHours(0, 0, 0, 0);
+    const end = new Date(task.end); end.setHours(0, 0, 0, 0);
+
+    if (today > end) return 'status-completed';
+    else if (today >= start && today <= end) return 'status-started';
+    else if (today < start) {
+        const diffDays = Math.ceil(Math.abs(start - today) / (1000 * 60 * 60 * 24)); 
+        if (diffDays <= 3) return 'status-commit';
+        else if (diffDays <= 7) return 'status-enable';
+    }
+    return 'status-none';
+}
+
+document.getElementById('btnRunTimeline').addEventListener('click', async function () {
+    const btn = document.getElementById('btnRunTimeline');
+    const simInput = document.getElementById('simulatedToday');
+
     // NẾU ĐANG CHẠY MÀ BẤM THÌ DỪNG LẠI (PAUSE)
     if (isRunning) {
         clearInterval(timelineInterval);
         isRunning = false;
-        btn.innerHTML = "▶ Run_Timeline";
+        btn.innerHTML = "▶ run timeline";
         btn.style.backgroundColor = "#4CAF50";
         renderWorkspace(); 
         return;
@@ -674,7 +821,7 @@ document.getElementById('btnRunTimeline').addEventListener('click', async functi
             currentDateTracker.setDate(currentDateTracker.getDate() + 5); 
             clearInterval(timelineInterval);
             isRunning = false;
-            btn.innerHTML = "▶ Run_Timeline";
+            btn.innerHTML = "▶ run timeline";
             btn.style.backgroundColor = "#4CAF50";
             renderWorkspace(); 
         }
