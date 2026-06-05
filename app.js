@@ -146,7 +146,8 @@ function getTaskStatus(task) {
         return { class: 'status-none', ganttClass: 'bar-none', text: 'None (Chưa gán 3D)' };
     }
 
-    const today = new Date();
+    const simInput = document.getElementById('simulatedToday').value;
+    const today = simInput ? new Date(simInput) : new Date();
     today.setHours(0, 0, 0, 0);
 
     const start = new Date(task.start);
@@ -172,6 +173,8 @@ function getTaskStatus(task) {
     
     return { class: 'status-none', ganttClass: 'bar-none', text: 'None (Chưa đến hạn)' };
 }
+
+document.getElementById('simulatedToday').addEventListener('change', renderWorkspace);
 
 // ==========================================
 // RENDER GIAO DIỆN
@@ -201,7 +204,6 @@ function renderWorkspace() {
         const modelDisplayText = task.modelDisplayName ? task.modelDisplayName : "select model";
         const modelStyle = task.modelDisplayName ? "color: #e65100; text-decoration: none; font-weight: bold;" : "";
 
-        // Tích hợp hệ thống màu 4D
         const status = getTaskStatus(task);
         task.custom_class = task.isSummary ? "bar-summary" : status.ganttClass;
 
@@ -332,6 +334,9 @@ function renderWorkspace() {
 
 renderWorkspace();
 
+// ==========================================
+// CÁC SỰ KIỆN NÚT BẤM VÀ XỬ LÝ KHÁC
+// ==========================================
 document.getElementById('btnAddTask').addEventListener('click', function () {
     const nameVal = document.getElementById('taskName').value.trim();
     const startVal = document.getElementById('taskStart').value;
@@ -483,18 +488,14 @@ document.getElementById('btnDeleteAll').addEventListener('click', function () {
         alert("Bảng đang trống, không có gì để xóa!");
         return;
     }
-    
     const isConfirm = confirm("⚠️ CẢNH BÁO: Bạn có chắc chắn muốn XÓA TOÀN BỘ công việc không?\\nHành động này sẽ không thể hoàn tác!");
-    
     if (isConfirm) {
         tasks = []; 
         localStorage.removeItem('bim_ai_tasks'); 
         renderWorkspace(); 
     }
 });
-// ==========================================
-// 7. ĐỒNG BỘ MÀU SẮC LÊN MÔ HÌNH 3D TRIMBLE
-// ==========================================
+
 document.getElementById('btnSync').addEventListener('click', async function () {
     try {
         if (typeof TrimbleConnectWorkspace === 'undefined') {
@@ -503,32 +504,23 @@ document.getElementById('btnSync').addEventListener('click', async function () {
         }
         
         const API = await TrimbleConnectWorkspace.connect(window.parent);
-        
-        // 1. Reset toàn bộ màu cũ của mô hình về mặc định trước khi tô màu mới
         await API.viewer.resetColors();
         
-        // 2. Bảng quy đổi màu sắc từ CSS sang mã màu RGB cho Trimble
         const colorMap = {
-            'status-none': { r: 140, g: 147, b: 155, a: 1 },    // Xám
-            'status-enable': { r: 23, g: 123, b: 192, a: 1 },   // Xanh nhạt
-            'status-commit': { r: 12, g: 67, b: 107, a: 1 },    // Xanh đậm
-            'status-started': { r: 247, g: 164, b: 28, a: 1 },  // Vàng cam
-            'status-paused': { r: 188, g: 30, b: 38, a: 1 },    // Đỏ
-            'status-completed': { r: 0, g: 109, b: 57, a: 1 }   // Xanh lá
+            'status-none': { r: 140, g: 147, b: 155, a: 1 },    
+            'status-enable': { r: 23, g: 123, b: 192, a: 1 },   
+            'status-commit': { r: 12, g: 67, b: 107, a: 1 },    
+            'status-started': { r: 247, g: 164, b: 28, a: 1 },  
+            'status-paused': { r: 188, g: 30, b: 38, a: 1 },    
+            'status-completed': { r: 0, g: 109, b: 57, a: 1 }   
         };
 
-        // Biến đếm xem có bao nhiêu cấu kiện được tô màu
         let paintedCount = 0;
-
-        // 3. Quét từng công việc, kiểm tra trạng thái và tô màu khối 3D tương ứng
         for (let task of tasks) {
-            // Chỉ xử lý những việc đã được gán 3D (có dữ liệu modelObjects)
             if (task.modelObjects && task.modelObjects.length > 0) {
                 const status = getTaskStatus(task);
                 const rgbColor = colorMap[status.class];
-                
                 if (rgbColor) {
-                    // Gọi lệnh của API Trimble để nhuộm màu
                     await API.viewer.setColors(task.modelObjects, rgbColor);
                     paintedCount++;
                 }

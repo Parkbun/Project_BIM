@@ -18,7 +18,9 @@ html, body {
 
 #toolbar h3 { margin-top: 0; margin-bottom: 10px; }
 
-.input-group { display: flex; gap: 8px; margin-bottom: 10px; }
+.input-group { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; flex-wrap: wrap; }
+.input-group input, .input-group select, .input-group button { height: 32px; box-sizing: border-box; }
+
 #pasteArea { flex: 0 0 auto; }
 
 .workspace {

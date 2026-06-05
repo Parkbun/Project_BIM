@@ -25,9 +25,15 @@
 							</select>
 							<button id="btnAddTask">+ Thêm Đầu Việc</button>
 
-							<button id="btnTogglePaste" style="background: #ff9800; margin-left: 15px; border-radius: 4px;">📋 Nhập từ MS Project</button>
+							<button id="btnTogglePaste" style="background: #ff9800; margin-left: 15px; border-radius: 4px; color: white; border: none; font-weight: bold; cursor: pointer; padding: 6px 12px;">📋 Nhập từ MS Project</button>
+
+							<div style="margin-left: 15px; display: inline-flex; align-items: center; background: #e3f2fd; padding: 4px 10px; border-radius: 4px; border: 1px solid #90caf9;">
+								<label style="font-size: 12px; margin-right: 5px; font-weight: bold; color: #1565c0;">🗓️ Ngày mô phỏng (4D):</label>
+								<input type="date" id="simulatedToday" style="border: none; background: transparent; font-weight: bold; color: #d32f2f; outline: none; cursor: pointer;">
+            </div>
+
+							<button id="btnSync" style="margin-left: 15px; font-weight: bold;">Đồng bộ 3D</button>
 						</div>
-			<button id="btnSync">Đồng bộ 3D</button>
 		</div>
 
 		<div id="pasteArea" style="display: none; padding: 10px 20px; background: #fff3e0; border-bottom: 1px solid #ffcc80;">
