@@ -1,4 +1,16 @@
 // ==========================================
+// 0. ÉP CSS ĐỊNH DẠNG TIMELINE TỪ BÊN TRONG JS
+// ==========================================
+const msProjectStyles = document.createElement('style');
+msProjectStyles.innerHTML = `
+    .gantt .grid-header { fill: #ffffff !important; }
+    .gantt .upper-text { fill: #333 !important; font-weight: bold !important; font-size: 13px !important; }
+    .gantt .lower-text { fill: #666 !important; font-size: 12px !important; }
+    .ms-split-line, .ms-v-divider { stroke: #d0d0d0 !important; stroke-width: 1px !important; }
+`;
+document.head.appendChild(msProjectStyles);
+
+// ==========================================
 // 1. KHỞI TẠO DỮ LIỆU & CẤU HÌNH
 // ==========================================
 let tasks = JSON.parse(localStorage.getItem('bim_ai_tasks')) || [];
@@ -43,18 +55,99 @@ function cleanDependencies(depStr) {
     return result.join(', ');
 }
 
-// ==========================================
-// 2. XỬ LÝ GIAO DIỆN & LOGIC CƠ BẢN
-// ==========================================
 function deleteTask(index) {
     tasks.splice(index, 1);
     tasks.forEach((t, i) => { t.id = "T" + (i + 1); });
     renderWorkspace();
 }
 
+// ==========================================
+// HÀM ÉP ĐỊNH DẠNG TIMELINE CHUẨN MS PROJECT
+// ==========================================
+function applyMSProjectFormat() {
+    const gSvg = document.getElementById('gantt-target');
+    if (!gSvg) return;
+
+    const dateGroup = gSvg.querySelector('.date');
+    const gridGroup = gSvg.querySelector('.grid');
+    if (!dateGroup || !gridGroup) return;
+
+    // Ép nền trắng
+    const gridHeaderBg = gridGroup.querySelector('.grid-header');
+    if (gridHeaderBg) gridHeaderBg.setAttribute('fill', '#ffffff');
+
+    // 1. Kẻ vạch ngang chia đôi Tháng & Ngày
+    let splitLine = dateGroup.querySelector('.ms-split-line');
+    if (!splitLine) {
+        splitLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        splitLine.setAttribute('class', 'ms-split-line');
+        dateGroup.appendChild(splitLine);
+    }
+    splitLine.setAttribute('x1', '0');
+    splitLine.setAttribute('x2', gSvg.getAttribute('width') || 3000);
+    splitLine.setAttribute('y1', '32');
+    splitLine.setAttribute('y2', '32');
+
+    // 2. Kẻ vạch dọc CHIA TỪNG Ô NGÀY
+    const ticks = gridGroup.querySelectorAll('.tick');
+    const tickCount = ticks.length.toString();
+    
+    if (dateGroup.getAttribute('data-tick-count') !== tickCount) {
+        dateGroup.querySelectorAll('.ms-v-divider').forEach(el => el.remove());
+        ticks.forEach(tick => {
+            const dAttr = tick.getAttribute('d');
+            if (dAttr) {
+                const match = dAttr.match(/M\s*([\d\.]+)/);
+                if (match) {
+                    const x = parseFloat(match[1]);
+                    const vLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    vLine.setAttribute('class', 'ms-v-divider');
+                    vLine.setAttribute('x1', x);
+                    vLine.setAttribute('x2', x);
+                    vLine.setAttribute('y1', '32'); 
+                    vLine.setAttribute('y2', '65'); 
+                    dateGroup.appendChild(vLine);
+                }
+            }
+        });
+        dateGroup.setAttribute('data-tick-count', tickCount);
+    }
+
+    // 3. Format Dòng Tháng (Thêm Năm)
+    const upperTexts = dateGroup.querySelectorAll('.upper-text');
+    let currentYear = (gantt && gantt.gantt_start) ? gantt.gantt_start.getFullYear() : new Date().getFullYear();
+    let lastMonthIndex = -1;
+    const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+    upperTexts.forEach(t => {
+        let txt = t.textContent.trim();
+        let mIndex = monthNames.findIndex(m => txt.toLowerCase().startsWith(m));
+        if (mIndex !== -1) {
+            if (lastMonthIndex !== -1 && mIndex < lastMonthIndex) currentYear++;
+            lastMonthIndex = mIndex;
+            if (!/\d{4}/.test(txt)) t.textContent = txt + ' ' + currentYear;
+        }
+        t.setAttribute('y', '20'); 
+    });
+
+    // 4. Format Dòng Ngày (Chỉ hiển thị số)
+    const lowerTexts = dateGroup.querySelectorAll('.lower-text');
+    lowerTexts.forEach(t => {
+        let txt = t.textContent.trim();
+        let match = txt.match(/^(\d{1,2})/); 
+        if (match && txt !== match[1]) t.textContent = match[1];
+        t.setAttribute('y', '54'); 
+    });
+}
+
+if (window.ganttFormatterInterval) clearInterval(window.ganttFormatterInterval);
+window.ganttFormatterInterval = setInterval(applyMSProjectFormat, 200);
+
+// ==========================================
+// RENDER GIAO DIỆN
+// ==========================================
 function renderWorkspace() {
     localStorage.setItem('bim_ai_tasks', JSON.stringify(tasks));
-
     const tbody = document.getElementById("tableBody");
     tbody.innerHTML = "";
 
@@ -65,6 +158,8 @@ function renderWorkspace() {
             </td>
         </tr>`;
         document.getElementById("gantt-target").innerHTML = "";
+        let oldOverlay = document.getElementById('gantt-numbers-overlay');
+        if (oldOverlay) oldOverlay.remove();
         return;
     }
 
@@ -73,7 +168,6 @@ function renderWorkspace() {
         if (task.level === 0) tr.classList.add('summary-task');
 
         let displayPred = task.rawDependencies !== undefined ? task.rawDependencies : (task.dependencies || "");
-
         const modelDisplayText = task.modelDisplayName ? task.modelDisplayName : "select model";
         const modelStyle = task.modelDisplayName ? "color: #e65100; text-decoration: none; font-weight: bold;" : "";
 
@@ -92,11 +186,8 @@ function renderWorkspace() {
 
         const tdAction = tr.querySelector('.col-action');
         const btnDelete = document.createElement('button');
-        btnDelete.className = 'btn-delete';
-        btnDelete.title = 'Xóa dòng này';
-        btnDelete.innerHTML = '🗑️';
+        btnDelete.className = 'btn-delete'; btnDelete.title = 'Xóa dòng này'; btnDelete.innerHTML = '🗑️';
         btnDelete.onclick = function () { deleteTask(index); };
-
         tdAction.appendChild(btnDelete);
         tbody.appendChild(tr);
     });
@@ -107,39 +198,97 @@ function renderWorkspace() {
             gantt = new Gantt("#gantt-target", tasks, ganttOptions);
 
             setTimeout(() => {
-                const ganttHeaderBkg = document.querySelector('#gantt-target .header-bkg');
-                if (ganttHeaderBkg) {
-                    const rHeight = ganttHeaderBkg.getBoundingClientRect().height;
-                    const trHead = document.querySelector('#projectTable thead tr');
-                    if (trHead) trHead.style.setProperty('height', rHeight + 'px', 'important');
-                    const ths = document.querySelectorAll('#projectTable thead th');
-                    ths.forEach(th => th.style.setProperty('height', rHeight + 'px', 'important'));
-                }
-
                 const ganttGridRows = document.querySelectorAll('#gantt-target .grid-row');
                 const tableBodyRows = document.querySelectorAll('#tableBody tr');
-                if (ganttGridRows.length > 0 && tableBodyRows.length > 0) {
-                    const rRowHeight = ganttGridRows[0].getBoundingClientRect().height;
+                
+                let headerHeight = 65, rowHeight = 65;
+                if (ganttGridRows.length > 0) {
+                    headerHeight = parseFloat(ganttGridRows[0].getAttribute('y'));
+                    rowHeight = parseFloat(ganttGridRows[0].getAttribute('height'));
+                }
+
+                const trHead = document.querySelector('#projectTable thead tr');
+                if (trHead) trHead.style.setProperty('height', headerHeight + 'px', 'important');
+                const ths = document.querySelectorAll('#projectTable thead th');
+                ths.forEach(th => th.style.setProperty('height', headerHeight + 'px', 'important'));
+
+                if (tableBodyRows.length > 0) {
                     tableBodyRows.forEach(tr => {
-                        tr.style.setProperty('height', rRowHeight + 'px', 'important');
-                        tr.querySelectorAll('td').forEach(td => {
-                            td.style.setProperty('height', rRowHeight + 'px', 'important');
-                        });
+                        tr.style.setProperty('height', rowHeight + 'px', 'important');
+                        tr.querySelectorAll('td').forEach(td => td.style.setProperty('height', rowHeight + 'px', 'important'));
                     });
                 }
+                
                 const gContainer = document.querySelector('.gantt-container');
                 const gSvg = document.getElementById('gantt-target');
                 if (gContainer && gSvg) {
                     const boxWidth = gContainer.clientWidth;
                     const currentSvgWidth = parseFloat(gSvg.getAttribute('width') || 0);
-                    
                     if (boxWidth > currentSvgWidth) {
                         gSvg.setAttribute('width', boxWidth);
                         const rects = gSvg.querySelectorAll('.grid-bg, .grid-row, .grid-header');
                         rects.forEach(rect => rect.setAttribute('width', boxWidth));
                     }
                 }
-            }, 50);
+
+                applyMSProjectFormat();
+
+                // Cột Số thứ tự (Lớp phủ)
+                if (gContainer) {
+                    const ganttLayout = document.querySelector('.gantt-layout');
+                    let oldOverlay = document.getElementById('gantt-numbers-overlay');
+                    if (oldOverlay) oldOverlay.remove();
+
+                    const overlay = document.createElement('div');
+                    overlay.id = 'gantt-numbers-overlay';
+                    overlay.style.position = 'absolute';
+                    overlay.style.top = '0';
+                    overlay.style.left = '0';
+                    overlay.style.bottom = '15px'; 
+                    overlay.style.width = '40px'; 
+                    overlay.style.backgroundColor = '#f0f0f0';
+                    overlay.style.borderRight = '1px solid #d0d0d0';
+                    overlay.style.borderLeft = '1px solid #d0d0d0';
+                    overlay.style.zIndex = '5';
+                    overlay.style.overflow = 'hidden';
+                    overlay.style.pointerEvents = 'none'; 
+
+                    const inner = document.createElement('div');
+                    inner.id = 'gantt-numbers-inner';
+                    inner.style.position = 'absolute';
+                    inner.style.top = '0'; inner.style.left = '0'; inner.style.right = '0';
+
+                    const headerSpacer = document.createElement('div');
+                    headerSpacer.style.height = headerHeight + 'px';
+                    headerSpacer.style.borderBottom = '1px solid #d0d0d0';
+                    headerSpacer.style.backgroundColor = '#ffffff'; 
+                    headerSpacer.style.boxSizing = 'border-box';
+                    inner.appendChild(headerSpacer);
+
+                    tasks.forEach((task, index) => {
+                        const numDiv = document.createElement('div');
+                        numDiv.style.height = rowHeight + 'px';
+                        numDiv.style.display = 'flex';
+                        numDiv.style.alignItems = 'center';
+                        numDiv.style.justifyContent = 'center';
+                        numDiv.style.fontWeight = 'bold';
+                        numDiv.style.color = '#666'; 
+                        numDiv.style.fontSize = '12px'; 
+                        numDiv.style.backgroundColor = '#f0f0f0'; 
+                        numDiv.style.borderBottom = '1px solid #d0d0d0';
+                        numDiv.style.boxSizing = 'border-box';
+                        numDiv.innerText = index + 1;
+                        inner.appendChild(numDiv);
+                    });
+
+                    overlay.appendChild(inner);
+                    ganttLayout.appendChild(overlay);
+
+                    gContainer.addEventListener('scroll', () => {
+                        inner.style.transform = `translateY(-${gContainer.scrollTop}px)`;
+                    });
+                }
+            }, 100); 
         }
     } catch (error) {
         console.error("Lỗi vẽ biểu đồ:", error);
@@ -157,28 +306,20 @@ document.getElementById('btnAddTask').addEventListener('click', function () {
     if (!nameVal || !startVal || !endVal) return;
 
     tasks.push({
-        id: "T" + (tasks.length + 1),
-        name: nameVal, start: startVal, end: endVal,
+        id: "T" + (tasks.length + 1), name: nameVal, start: startVal, end: endVal,
         progress: 0, rawDependencies: "", dependencies: "",
-        level: levelVal, isSummary: levelVal < 2,
-        custom_class: levelVal < 2 ? "bar-summary" : "bar-detail"
+        level: levelVal, isSummary: levelVal < 2, custom_class: levelVal < 2 ? "bar-summary" : "bar-detail"
     });
 
     renderWorkspace();
-    document.getElementById('taskName').value = "";
-    document.getElementById('taskName').focus();
+    document.getElementById('taskName').value = ""; document.getElementById('taskName').focus();
 });
 
-// ==========================================
-// 3. TÍNH NĂNG SMART PASTE & AI PARSER
-// ==========================================
 document.getElementById('btnTogglePaste').addEventListener('click', function () {
-    document.getElementById('pasteArea').style.display = 'block';
-    document.getElementById('pasteInput').focus();
+    document.getElementById('pasteArea').style.display = 'block'; document.getElementById('pasteInput').focus();
 });
 document.getElementById('btnClosePaste').addEventListener('click', function () {
-    document.getElementById('pasteArea').style.display = 'none';
-    document.getElementById('pasteInput').value = '';
+    document.getElementById('pasteArea').style.display = 'none'; document.getElementById('pasteInput').value = '';
 });
 
 function parseExcelDate(dateStr) {
@@ -205,35 +346,25 @@ function processPastedData(pastedText) {
         let dateCols = [];
 
         cols.forEach((col, idx) => {
-            if (col.match(/\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/)) {
-                dateCols.push({ index: idx, value: col });
-            }
+            if (col.match(/\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/)) dateCols.push({ index: idx, value: col });
         });
 
         if (dateCols.length >= 2) {
-            let startIdx = dateCols[0].index;
-            let endIdx = dateCols[1].index;
-
-            startVal = parseExcelDate(dateCols[0].value);
-            endVal = parseExcelDate(dateCols[1].value);
+            let startIdx = dateCols[0].index; let endIdx = dateCols[1].index;
+            startVal = parseExcelDate(dateCols[0].value); endVal = parseExcelDate(dateCols[1].value);
 
             for (let i = startIdx - 1; i >= 0; i--) {
                 let text = cols[i].trim();
                 if (text && !text.toLowerCase().includes('day') && !text.toLowerCase().includes('scheduled') && !text.match(/^\d+(\.\d+)?$/)) {
-                    nameVal = text;
-                    break;
+                    nameVal = text; break;
                 }
             }
             if (!nameVal) nameVal = cols[0].trim();
-
-            if (cols.length > endIdx + 1) {
-                predVal = cols[endIdx + 1].trim();
-            }
+            if (cols.length > endIdx + 1) predVal = cols[endIdx + 1].trim();
 
             if (nameVal && startVal && endVal && !startVal.includes("undefined")) {
                 tasks.push({
-                    id: "T" + (tasks.length + 1),
-                    name: nameVal, start: startVal, end: endVal, progress: 0,
+                    id: "T" + (tasks.length + 1), name: nameVal, start: startVal, end: endVal, progress: 0,
                     rawDependencies: predVal, dependencies: cleanDependencies(predVal),
                     level: 2, isSummary: false, custom_class: "bar-detail"
                 });
@@ -242,19 +373,14 @@ function processPastedData(pastedText) {
         }
     });
 
-    if (isAdded) {
-        renderWorkspace();
-    } else {
-        alert("Lỗi: Không tìm thấy cột ngày tháng hợp lệ. Hãy kiểm tra lại dữ liệu Copy!");
-    }
+    if (isAdded) renderWorkspace();
+    else alert("Lỗi: Không tìm thấy cột ngày tháng hợp lệ. Hãy kiểm tra lại dữ liệu Copy!");
 }
 
 document.getElementById('btnConfirmPaste').addEventListener('click', function () {
     const text = document.getElementById('pasteInput').value;
     if (text) {
-        processPastedData(text);
-        document.getElementById('pasteArea').style.display = 'none';
-        document.getElementById('pasteInput').value = '';
+        processPastedData(text); document.getElementById('pasteArea').style.display = 'none'; document.getElementById('pasteInput').value = '';
     }
 });
 
@@ -265,37 +391,24 @@ document.addEventListener('paste', function (e) {
     if (pastedText) processPastedData(pastedText);
 });
 
-// ==========================================
-// 4. XỬ LÝ GÁN MÔ HÌNH 3D TỪ TRIMBLE CONNECT (LẤY TÊN LAYER)
-// ==========================================
 async function select3DModel(taskIndex) {
     try {
         if (typeof TrimbleConnectWorkspace === 'undefined') {
-            alert("Không tìm thấy Trimble Connect API. Đảm bảo ứng dụng đang mở trong Trimble Connect.");
-            return;
+            alert("Không tìm thấy Trimble Connect API. Đảm bảo ứng dụng đang mở trong Trimble Connect."); return;
         }
-
         const API = await TrimbleConnectWorkspace.connect(window.parent);
         const selection = await API.viewer.getSelection();
-
         const hasSelection = selection && selection.length > 0 && selection.some(model => model.objectRuntimeIds && model.objectRuntimeIds.length > 0);
 
         if (!hasSelection) {
-            alert("⚠️ Bạn chưa chọn khối 3D nào! Vui lòng click chọn khối 3D trên mô hình (khối sáng viền vàng) trước khi bấm gán.");
-            return;
+            alert("⚠️ Bạn chưa chọn khối 3D nào! Vui lòng click chọn khối 3D trên mô hình (khối sáng viền vàng) trước khi bấm gán."); return;
         }
 
-        let totalSelected = 0;
-        let firstModelId = null;
-        let firstObjectId = null;
-
+        let totalSelected = 0, firstModelId = null, firstObjectId = null;
         selection.forEach(model => {
             if (model.objectRuntimeIds && model.objectRuntimeIds.length > 0) {
                 totalSelected += model.objectRuntimeIds.length;
-                if (!firstModelId) {
-                    firstModelId = model.modelId;
-                    firstObjectId = model.objectRuntimeIds[0];
-                }
+                if (!firstModelId) { firstModelId = model.modelId; firstObjectId = model.objectRuntimeIds[0]; }
             }
         });
 
@@ -303,38 +416,25 @@ async function select3DModel(taskIndex) {
         try {
             if (firstModelId && firstObjectId !== null) {
                 const objectProps = await API.viewer.getObjectProperties(firstModelId, [firstObjectId]);
-
                 if (objectProps && objectProps.length > 0) {
-                    const obj = objectProps[0];
-                    let foundLayer = null;
-
+                    const obj = objectProps[0]; let foundLayer = null;
                     if (obj.properties && Array.isArray(obj.properties)) {
                         for (let pset of obj.properties) {
                             if (pset.properties && Array.isArray(pset.properties)) {
                                 let layerProp = pset.properties.find(p => p.name && p.name.toLowerCase().includes('layer'));
-                                if (layerProp) {
-                                    foundLayer = layerProp.value;
-                                    break;
-                                }
+                                if (layerProp) { foundLayer = layerProp.value; break; }
                             }
                         }
                     }
-
-                    if (foundLayer) {
-                        modelName = foundLayer;
-                    } else if (obj.class) {
-                        modelName = obj.class.replace(/^Ifc/, '');
-                    }
+                    if (foundLayer) modelName = foundLayer;
+                    else if (obj.class) modelName = obj.class.replace(/^Ifc/, '');
                 }
             }
-        } catch (err) {
-            console.warn("Không trích xuất được tên Layer, dùng tên mặc định.", err);
-        }
+        } catch (err) { console.warn("Không trích xuất được tên Layer, dùng tên mặc định.", err); }
 
         const task = tasks[taskIndex];
         task.modelObjects = selection;
         task.modelDisplayName = `(${totalSelected}) ${modelName}`;
-
         renderWorkspace();
 
     } catch (error) {
@@ -342,3 +442,22 @@ async function select3DModel(taskIndex) {
         alert("Có lỗi xảy ra khi lấy dữ liệu từ mô hình. Bạn ấn F12 xem tab Console để biết chi tiết nhé.");
     }
 }
+
+// ==========================================
+// 5. TÍNH NĂNG XÓA TOÀN BỘ CÔNG VIỆC (DELETE ALL)
+// ==========================================
+document.getElementById('btnDeleteAll').addEventListener('click', function () {
+    if (tasks.length === 0) {
+        alert("Bảng đang trống, không có gì để xóa!");
+        return;
+    }
+    
+    // Hiện hộp thoại cảnh báo nguy hiểm
+    const isConfirm = confirm("⚠️ CẢNH BÁO: Bạn có chắc chắn muốn XÓA TOÀN BỘ công việc không?\\nHành động này sẽ không thể hoàn tác!");
+    
+    if (isConfirm) {
+        tasks = []; // Xóa sạch mảng dữ liệu
+        localStorage.removeItem('bim_ai_tasks'); // Xóa sạch bộ nhớ tạm
+        renderWorkspace(); // Vẽ lại giao diện trống
+    }
+});
