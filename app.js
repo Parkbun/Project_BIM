@@ -578,7 +578,7 @@ document.getElementById('btnRunTimeline').addEventListener('click', async functi
     if (isRunning) {
         clearInterval(timelineInterval);
         isRunning = false;
-        btn.innerHTML = "▶ Run Timeline";
+        btn.innerHTML = "▶ Run_Timeline";
         btn.style.backgroundColor = "#4CAF50";
         renderWorkspace(); 
         return;
@@ -674,7 +674,7 @@ document.getElementById('btnRunTimeline').addEventListener('click', async functi
             currentDateTracker.setDate(currentDateTracker.getDate() + 5); 
             clearInterval(timelineInterval);
             isRunning = false;
-            btn.innerHTML = "▶ Run Timeline";
+            btn.innerHTML = "▶ Run_Timeline";
             btn.style.backgroundColor = "#4CAF50";
             renderWorkspace(); 
         }
