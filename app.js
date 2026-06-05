@@ -72,11 +72,9 @@ function applyMSProjectFormat() {
     const gridGroup = gSvg.querySelector('.grid');
     if (!dateGroup || !gridGroup) return;
 
-    // Ép nền trắng
     const gridHeaderBg = gridGroup.querySelector('.grid-header');
     if (gridHeaderBg) gridHeaderBg.setAttribute('fill', '#ffffff');
 
-    // 1. Kẻ vạch ngang chia đôi Tháng & Ngày
     let splitLine = dateGroup.querySelector('.ms-split-line');
     if (!splitLine) {
         splitLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -88,7 +86,6 @@ function applyMSProjectFormat() {
     splitLine.setAttribute('y1', '32');
     splitLine.setAttribute('y2', '32');
 
-    // 2. Kẻ vạch dọc CHIA TỪNG Ô NGÀY
     const ticks = gridGroup.querySelectorAll('.tick');
     const tickCount = ticks.length.toString();
     
@@ -113,7 +110,6 @@ function applyMSProjectFormat() {
         dateGroup.setAttribute('data-tick-count', tickCount);
     }
 
-    // 3. Format Dòng Tháng (Thêm Năm)
     const upperTexts = dateGroup.querySelectorAll('.upper-text');
     let currentYear = (gantt && gantt.gantt_start) ? gantt.gantt_start.getFullYear() : new Date().getFullYear();
     let lastMonthIndex = -1;
@@ -130,7 +126,6 @@ function applyMSProjectFormat() {
         t.setAttribute('y', '20'); 
     });
 
-    // 4. Format Dòng Ngày (Chỉ hiển thị số)
     const lowerTexts = dateGroup.querySelectorAll('.lower-text');
     lowerTexts.forEach(t => {
         let txt = t.textContent.trim();
@@ -142,6 +137,41 @@ function applyMSProjectFormat() {
 
 if (window.ganttFormatterInterval) clearInterval(window.ganttFormatterInterval);
 window.ganttFormatterInterval = setInterval(applyMSProjectFormat, 200);
+
+// ==========================================
+// THUẬT TOÁN ĐÁNH GIÁ TRẠNG THÁI 4D TỰ ĐỘNG
+// ==========================================
+function getTaskStatus(task) {
+    if (!task.modelDisplayName || task.modelDisplayName === "select model") {
+        return { class: 'status-none', ganttClass: 'bar-none', text: 'None (Chưa gán 3D)' };
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const start = new Date(task.start);
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(task.end);
+    end.setHours(0, 0, 0, 0);
+
+    if (today > end) {
+        return { class: 'status-completed', ganttClass: 'bar-completed', text: 'Completed (Đã xong)' };
+    } else if (today >= start && today <= end) {
+        return { class: 'status-started', ganttClass: 'bar-started', text: 'Started (Đang thi công)' };
+    } else if (today < start) {
+        const diffTime = Math.abs(start - today);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+        
+        if (diffDays <= 3) {
+            return { class: 'status-commit', ganttClass: 'bar-commit', text: 'Commit (Sắp thi công)' };
+        } else if (diffDays <= 7) {
+            return { class: 'status-enable', ganttClass: 'bar-enable', text: 'Enable (Chuẩn bị)' };
+        }
+    }
+    
+    return { class: 'status-none', ganttClass: 'bar-none', text: 'None (Chưa đến hạn)' };
+}
 
 // ==========================================
 // RENDER GIAO DIỆN
@@ -171,9 +201,15 @@ function renderWorkspace() {
         const modelDisplayText = task.modelDisplayName ? task.modelDisplayName : "select model";
         const modelStyle = task.modelDisplayName ? "color: #e65100; text-decoration: none; font-weight: bold;" : "";
 
+        // Tích hợp hệ thống màu 4D
+        const status = getTaskStatus(task);
+        task.custom_class = task.isSummary ? "bar-summary" : status.ganttClass;
+
         tr.innerHTML = `
             <td class="col-id">${index + 1}</td>
-            <td class="col-icon"><span class="task-mode-icon"></span></td>
+            <td class="col-icon" title="${status.text}">
+                <span class="task-status-dot ${status.class}"></span>
+            </td>
             <td class="col-name level-${task.level}">${task.name}</td>
             <td class="col-dur">${calculateDuration(task.start, task.end)}</td>
             <td class="col-date">${formatToDDMMYY(task.start)}</td>
@@ -233,7 +269,6 @@ function renderWorkspace() {
 
                 applyMSProjectFormat();
 
-                // Cột Số thứ tự (Lớp phủ)
                 if (gContainer) {
                     const ganttLayout = document.querySelector('.gantt-layout');
                     let oldOverlay = document.getElementById('gantt-numbers-overlay');
@@ -443,21 +478,17 @@ async function select3DModel(taskIndex) {
     }
 }
 
-// ==========================================
-// 5. TÍNH NĂNG XÓA TOÀN BỘ CÔNG VIỆC (DELETE ALL)
-// ==========================================
 document.getElementById('btnDeleteAll').addEventListener('click', function () {
     if (tasks.length === 0) {
         alert("Bảng đang trống, không có gì để xóa!");
         return;
     }
     
-    // Hiện hộp thoại cảnh báo nguy hiểm
     const isConfirm = confirm("⚠️ CẢNH BÁO: Bạn có chắc chắn muốn XÓA TOÀN BỘ công việc không?\\nHành động này sẽ không thể hoàn tác!");
     
     if (isConfirm) {
-        tasks = []; // Xóa sạch mảng dữ liệu
-        localStorage.removeItem('bim_ai_tasks'); // Xóa sạch bộ nhớ tạm
-        renderWorkspace(); // Vẽ lại giao diện trống
+        tasks = []; 
+        localStorage.removeItem('bim_ai_tasks'); 
+        renderWorkspace(); 
     }
 });

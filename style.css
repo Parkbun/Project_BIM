@@ -111,7 +111,7 @@ tr:hover .btn-delete { opacity: 1; }
 .select-model-btn:hover { color: #e65100; }
 
 /* =========================================
-   6. NÚT XÓA TỔNG (DELETE ALL)
+   5. NÚT XÓA TỔNG (DELETE ALL)
 ========================================= */
 .btn-delete-all {
     background: none; border: none; cursor: pointer;
@@ -119,3 +119,28 @@ tr:hover .btn-delete { opacity: 1; }
     transition: all 0.2s; padding: 0;
 }
 .btn-delete-all:hover { opacity: 1; transform: scale(1.2); }
+
+/* =========================================
+   6. MÀU SẮC TRẠNG THÁI TIẾN ĐỘ 4D
+========================================= */
+.status-none { background-color: #8c939b !important; }
+.status-enable { background-color: #177bc0 !important; }
+.status-commit { background-color: #0c436b !important; }
+.status-started { background-color: #f7a41c !important; }
+.status-paused { background-color: #bc1e26 !important; }
+.status-completed { background-color: #006d39 !important; }
+
+.task-status-dot {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.bar-none .bar { fill: #8c939b !important; }
+.bar-enable .bar { fill: #177bc0 !important; }
+.bar-commit .bar { fill: #0c436b !important; }
+.bar-started .bar { fill: #f7a41c !important; }
+.bar-paused .bar { fill: #bc1e26 !important; }
+.bar-completed .bar { fill: #006d39 !important; }
