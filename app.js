@@ -139,39 +139,31 @@ if (window.ganttFormatterInterval) clearInterval(window.ganttFormatterInterval);
 window.ganttFormatterInterval = setInterval(applyMSProjectFormat, 200);
 
 // ==========================================
-// THUẬT TOÁN ĐÁNH GIÁ TRẠNG THÁI 4D TỰ ĐỘNG
+// THUẬT TOÁN ĐÁNH GIÁ TRẠNG THÁI 4D (CHO BẢNG)
 // ==========================================
 function getTaskStatus(task) {
     if (!task.modelDisplayName || task.modelDisplayName === "select model") {
-        return { class: 'status-none', ganttClass: 'bar-none', text: 'None (Chưa gán 3D)' };
+        return { class: 'status-none', text: 'None (Chưa gán 3D)' };
     }
 
     const simInput = document.getElementById('simulatedToday').value;
     const today = simInput ? new Date(simInput) : new Date();
     today.setHours(0, 0, 0, 0);
 
-    const start = new Date(task.start);
-    start.setHours(0, 0, 0, 0);
-
-    const end = new Date(task.end);
-    end.setHours(0, 0, 0, 0);
+    const start = new Date(task.start); start.setHours(0, 0, 0, 0);
+    const end = new Date(task.end); end.setHours(0, 0, 0, 0);
 
     if (today > end) {
-        return { class: 'status-completed', ganttClass: 'bar-completed', text: 'Completed (Đã xong)' };
+        return { class: 'status-completed', text: 'Completed (Đã xong)' };
     } else if (today >= start && today <= end) {
-        return { class: 'status-started', ganttClass: 'bar-started', text: 'Started (Đang thi công)' };
+        return { class: 'status-started', text: 'Started (Đang thi công)' };
     } else if (today < start) {
         const diffTime = Math.abs(start - today);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-        
-        if (diffDays <= 3) {
-            return { class: 'status-commit', ganttClass: 'bar-commit', text: 'Commit (Sắp thi công)' };
-        } else if (diffDays <= 7) {
-            return { class: 'status-enable', ganttClass: 'bar-enable', text: 'Enable (Chuẩn bị)' };
-        }
+        if (diffDays <= 3) return { class: 'status-commit', text: 'Commit (Sắp thi công)' };
+        else if (diffDays <= 7) return { class: 'status-enable', text: 'Enable (Chuẩn bị)' };
     }
-    
-    return { class: 'status-none', ganttClass: 'bar-none', text: 'None (Chưa đến hạn)' };
+    return { class: 'status-none', text: 'None (Chưa đến hạn)' };
 }
 
 document.getElementById('simulatedToday').addEventListener('change', renderWorkspace);
@@ -205,12 +197,14 @@ function renderWorkspace() {
         const modelStyle = task.modelDisplayName ? "color: #e65100; text-decoration: none; font-weight: bold;" : "";
 
         const status = getTaskStatus(task);
-        task.custom_class = task.isSummary ? "bar-summary" : status.ganttClass;
+        
+        // PHÉP THUẬT Ở ĐÂY: Ép màu thanh Gantt về đúng bản chất (Summary: đen xám, Detail: xanh dương)
+        task.custom_class = task.isSummary ? "bar-summary" : "bar-detail";
 
         tr.innerHTML = `
             <td class="col-id">${index + 1}</td>
             <td class="col-icon" title="${status.text}">
-                <span class="task-status-dot ${status.class}"></span>
+                <span class="task-status-dot ${status.class}" id="dot-${index}"></span>
             </td>
             <td class="col-name level-${task.level}">${task.name}</td>
             <td class="col-dur">${calculateDuration(task.start, task.end)}</td>
@@ -496,6 +490,9 @@ document.getElementById('btnDeleteAll').addEventListener('click', function () {
     }
 });
 
+// ==========================================
+// ĐỒNG BỘ 3D THEO MỐC NGÀY CHỈ ĐỊNH
+// ==========================================
 document.getElementById('btnSync').addEventListener('click', async function () {
     try {
         if (typeof TrimbleConnectWorkspace === 'undefined') {
@@ -507,7 +504,7 @@ document.getElementById('btnSync').addEventListener('click', async function () {
         await API.viewer.resetColors();
         
         const colorMap = {
-            'status-none': { r: 140, g: 147, b: 155, a: 1 },    
+            'status-none': { r: 140, g: 147, b: 155, a: 0.2 }, // Xám mờ cho việc chưa làm   
             'status-enable': { r: 23, g: 123, b: 192, a: 1 },   
             'status-commit': { r: 12, g: 67, b: 107, a: 1 },    
             'status-started': { r: 247, g: 164, b: 28, a: 1 },  
@@ -537,4 +534,129 @@ document.getElementById('btnSync').addEventListener('click', async function () {
         console.error("Lỗi đồng bộ 3D:", error);
         alert("Có lỗi xảy ra khi đồng bộ màu lên mô hình 3D. Hãy xem tab Console (F12) để biết chi tiết.");
     }
+});
+
+// ==========================================
+// 8. ĐỘNG CƠ "RUN TIMELINE" (AUTO PLAY 4D)
+// ==========================================
+let timelineInterval = null;
+let isRunning = false;
+let currentDateTracker = null;
+
+// Hàm kiểm tra trạng thái cực nhanh để không bị giật lag khi vòng lặp chạy
+function getFastStatusForDate(task, targetDate) {
+    const today = new Date(targetDate); today.setHours(0, 0, 0, 0);
+    const start = new Date(task.start); start.setHours(0, 0, 0, 0);
+    const end = new Date(task.end); end.setHours(0, 0, 0, 0);
+
+    if (today > end) return 'status-completed';
+    else if (today >= start && today <= end) return 'status-started';
+    else if (today < start) {
+        const diffDays = Math.ceil(Math.abs(start - today) / (1000 * 60 * 60 * 24)); 
+        if (diffDays <= 3) return 'status-commit';
+        else if (diffDays <= 7) return 'status-enable';
+    }
+    return 'status-none';
+}
+
+document.getElementById('btnRunTimeline').addEventListener('click', async function () {
+    const btn = document.getElementById('btnRunTimeline');
+    const simInput = document.getElementById('simulatedToday');
+
+    // NẾU ĐANG CHẠY MÀ BẤM THÌ DỪNG LẠI (PAUSE)
+    if (isRunning) {
+        clearInterval(timelineInterval);
+        isRunning = false;
+        btn.innerHTML = "▶ Run Timeline";
+        btn.style.backgroundColor = "#4CAF50";
+        renderWorkspace(); 
+        return;
+    }
+
+    // TÍNH TOÁN NGÀY BẮT ĐẦU VÀ KẾT THÚC CỦA TOÀN DỰ ÁN
+    let minDate = new Date(8640000000000000); 
+    let maxDate = new Date(-8640000000000000); 
+    let hasModels = false;
+
+    tasks.forEach(t => {
+        if (t.modelObjects && t.modelObjects.length > 0) {
+            hasModels = true;
+            let s = new Date(t.start); let e = new Date(t.end);
+            if (s < minDate) minDate = s;
+            if (e > maxDate) maxDate = e;
+        }
+    });
+
+    if (!hasModels) {
+        alert("⚠️ Bạn chưa Select model cho bất kỳ công việc nào. Vui lòng gán 3D trước khi chạy Timeline!");
+        return;
+    }
+
+    // Khởi tạo mốc thời gian bắt đầu chạy (lùi lại 5 ngày trước khi khởi công)
+    if (!currentDateTracker || currentDateTracker > maxDate || currentDateTracker < minDate) {
+        currentDateTracker = new Date(minDate);
+        currentDateTracker.setDate(currentDateTracker.getDate() - 5); 
+    }
+
+    // Kết nối API Trimble
+    let API;
+    try {
+        API = await TrimbleConnectWorkspace.connect(window.parent);
+        await API.viewer.resetColors();
+    } catch (err) {
+        alert("⚠️ Tính năng này chỉ chạy bên trong môi trường Trimble Connect!");
+        return;
+    }
+
+    isRunning = true;
+    btn.innerHTML = "⏸ Pause Timeline";
+    btn.style.backgroundColor = "#f44336"; // Đổi nút thành màu đỏ
+
+    const colorMap = {
+        'status-none': { r: 140, g: 147, b: 155, a: 0.2 }, // Xám mờ
+        'status-enable': { r: 23, g: 123, b: 192, a: 1 },
+        'status-commit': { r: 12, g: 67, b: 107, a: 1 },
+        'status-started': { r: 247, g: 164, b: 28, a: 1 },  // Vàng (Đang làm)
+        'status-completed': { r: 0, g: 109, b: 57, a: 1 }   // Xanh (Đã xong)
+    };
+
+    // VÒNG LẶP THỜI GIAN (0.4 giây nhảy 1 lần)
+    timelineInterval = setInterval(async () => {
+        const isoDate = currentDateTracker.toISOString().split('T')[0];
+        simInput.value = isoDate;
+
+        let paintRequests = [];
+        
+        // Quét để đổi màu khối 3D và chấm tròn trên bảng
+        for (let i = 0; i < tasks.length; i++) {
+            let task = tasks[i];
+            if (task.modelObjects && task.modelObjects.length > 0) {
+                const statusClass = getFastStatusForDate(task, currentDateTracker);
+                
+                // Cập nhật chấm tròn trên bảng không cần render lại toàn bộ để tránh lag
+                const dot = document.getElementById(`dot-${i}`);
+                if (dot) dot.className = `task-status-dot ${statusClass}`;
+
+                // Gửi lệnh nhuộm màu cho Trimble
+                const rgbColor = colorMap[statusClass];
+                if (rgbColor) {
+                    paintRequests.push(API.viewer.setColors(task.modelObjects, rgbColor));
+                }
+            }
+        }
+        await Promise.all(paintRequests); 
+
+        // Tăng thêm 1 ngày
+        currentDateTracker.setDate(currentDateTracker.getDate() + 1);
+
+        // Dừng lại nếu đã vượt qua ngày kết thúc dự án
+        if (currentDateTracker > maxDate) {
+            currentDateTracker.setDate(currentDateTracker.getDate() + 5); // Chạy lố vài ngày cho mượt
+            clearInterval(timelineInterval);
+            isRunning = false;
+            btn.innerHTML = "▶ Run Timeline";
+            btn.style.backgroundColor = "#4CAF50";
+            renderWorkspace(); // Chốt lại trạng thái
+        }
+    }, 400); 
 });

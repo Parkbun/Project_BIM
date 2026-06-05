@@ -123,7 +123,7 @@ tr:hover .btn-delete { opacity: 1; }
 .btn-delete-all:hover { opacity: 1; transform: scale(1.2); }
 
 /* =========================================
-   6. MÀU SẮC TRẠNG THÁI TIẾN ĐỘ 4D
+   6. MÀU SẮC CHẤM TRÒN TRẠNG THÁI TIẾN ĐỘ 4D
 ========================================= */
 .status-none { background-color: #8c939b !important; }
 .status-enable { background-color: #177bc0 !important; }
@@ -139,10 +139,3 @@ tr:hover .btn-delete { opacity: 1; }
     border-radius: 50%;
     box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
-
-.bar-none .bar { fill: #8c939b !important; }
-.bar-enable .bar { fill: #177bc0 !important; }
-.bar-commit .bar { fill: #0c436b !important; }
-.bar-started .bar { fill: #f7a41c !important; }
-.bar-paused .bar { fill: #bc1e26 !important; }
-.bar-completed .bar { fill: #006d39 !important; }
